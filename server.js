@@ -1,65 +1,73 @@
 'use strict';
 require('dotenv').config();
-const express     = require('express');
-const bodyParser  = require('body-parser');
-const cors        = require('cors');
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const helmet = require('helmet');
+const mongoose = require('mongoose');
 
-const apiRoutes         = require('./routes/api.js');
-const fccTestingRoutes  = require('./routes/fcctesting.js');
-const runner            = require('./test-runner');
+const apiRoutes = require('./routes/api.js');
+const fccTestingRoutes = require('./routes/fcctesting.js');
 
 const app = express();
 
-app.use('/public', express.static(process.cwd() + '/public'));
+// --- Conexión a la Base de Datos ---
+mongoose.connect(process.env.DB, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('Conexión exitosa a MongoDB'))
+  .catch(err => console.error('Error de conexión a MongoDB:', err));
 
-app.use(cors({origin: '*'})); //For FCC testing purposes only
-
+// --- Middleware y Seguridad ---
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors({ origin: '*' }));
 
-//Sample front-end
-app.route('/b/:board/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/board.html');
-  });
-app.route('/b/:board/:threadid')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/thread.html');
-  });
+// Medidas de seguridad usando Helmet
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    styleSrc: ["'self'"],
+    scriptSrc: ["'self'"]
+  }
+}));
+app.use(helmet.xssFilter());
+app.use(helmet.noSniff());
+app.use(helmet.ieNoOpen());
 
-//Index page (static HTML)
+// --- Rutas Estáticas y Vistas ---
+app.use('/public', express.static(process.cwd() + '/public'));
+
+// Rutas de testing de FreeCodeCamp
+fccTestingRoutes(app);
+
+// Ruta principal
 app.route('/')
   .get(function (req, res) {
     res.sendFile(process.cwd() + '/views/index.html');
   });
 
-//For FCC testing purposes
-fccTestingRoutes(app);
+// Ruta para la vista de un Tablero
+app.route('/b/:board/')
+  .get(function (req, res) {
+    res.sendFile(process.cwd() + '/views/board.html');
+  });
 
-//Routing for API 
+// Ruta para la vista de un Hilo
+app.route('/b/:board/:thread_id')
+  .get(function (req, res) {
+    res.sendFile(process.cwd() + '/views/thread.html');
+  });
+
+// --- Rutas de la API ---
 apiRoutes(app);
 
-//404 Not Found Middleware
+// Manejador de error para rutas no encontradas
 app.use(function(req, res, next) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
+  res.status(404).type('text').send('Not Found');
 });
 
-//Start our server and tests!
+// --- Iniciar el Servidor ---
 const listener = app.listen(process.env.PORT || 3000, function () {
-  console.log('Your app is listening on port ' + listener.address().port);
-  if(process.env.NODE_ENV==='test') {
-    console.log('Running Tests...');
-    setTimeout(function () {
-      try {
-        runner.run();
-      } catch(e) {
-        console.log('Tests are not valid:');
-        console.error(e);
-      }
-    }, 1500);
-  }
+  console.log('Tu aplicación está escuchando en el puerto ' + listener.address().port);
 });
 
-module.exports = app; //for testing
+module.exports = app;
